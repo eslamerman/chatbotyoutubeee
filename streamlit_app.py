@@ -1,6 +1,8 @@
 # config.py
 import streamlit as st
 
+print(st.secrets["DEPLOYMENT_URL"])
+
 # Get the deployment URL from secrets
 DEPLOYMENT_URL = st.secrets["DEPLOYMENT_URL"]
 
