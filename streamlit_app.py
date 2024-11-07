@@ -2,7 +2,7 @@
 import streamlit as st
 
 # Get the deployment URL from secrets
-DEPLOYMENT_URL = "https://chatbotyoutubeee.streamlit.app"#st.secrets["DEPLOYMENT_URL"]
+DEPLOYMENT_URL = st.secrets["DEPLOYMENT_URL"]
 
 GOOGLE_CLIENT_CONFIG = {
     "web": {
