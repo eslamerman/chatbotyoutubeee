@@ -1,40 +1,46 @@
-# config.py
-import streamlit as st
-
-print(st.secrets["DEPLOYMENT_URL"])
-
-# Get the deployment URL from secrets
-DEPLOYMENT_URL = st.secrets["DEPLOYMENT_URL"]
-
-GOOGLE_CLIENT_CONFIG = {
-    "web": {
-        "client_id": st.secrets["GOOGLE_CLIENT_ID"],
-        "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token",
-        "redirect_uris": [
-            f"{DEPLOYMENT_URL}",
-            f"{DEPLOYMENT_URL}/"
-        ],
-        "javascript_origins": [DEPLOYMENT_URL]
-    }
-}
-
-# auth.py
+# streamlit_app.py
 import streamlit as st
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-import json
 from urllib.parse import urlparse
 
+# Config and Error Handling
+def get_config():
+    try:
+        return {
+            "web": {
+                "client_id": st.secrets["GOOGLE_CLIENT_ID"],
+                "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [st.secrets.get("DEPLOYMENT_URL", "http://localhost:8501")],
+                "javascript_origins": [st.secrets.get("DEPLOYMENT_URL", "http://localhost:8501")]
+            }
+        }
+    except KeyError:
+        st.error("""
+        Missing required secrets. Please add the following to your secrets:
+        - GOOGLE_CLIENT_ID
+        - GOOGLE_CLIENT_SECRET
+        - DEPLOYMENT_URL
+        
+        Go to your Streamlit app settings -> Secrets and add them in TOML format:
+        ```toml
+        GOOGLE_CLIENT_ID = "your-google-client-id"
+        GOOGLE_CLIENT_SECRET = "your-google-client-secret"
+        DEPLOYMENT_URL = "https://chatbotyoutubeee.streamlit.app"
+        ```
+        """)
+        st.stop()
+
+# Google Authentication Class
 class GoogleAuth:
     def __init__(self, client_config):
         self.client_config = client_config
         self.flow = None
     
     def get_redirect_uri(self):
-        # Get the current URL from Streamlit's session state
         if st.session_state.get('current_url'):
             parsed_url = urlparse(st.session_state.current_url)
             base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
@@ -69,19 +75,15 @@ class GoogleAuth:
         user_info = service.userinfo().get().execute()
         return user_info
 
-# main.py
-import streamlit as st
-from auth import GoogleAuth
-from config import GOOGLE_CLIENT_CONFIG
-
+# Session State Initialization
 def initialize_session_state():
     if 'user_info' not in st.session_state:
         st.session_state.user_info = None
     if 'authentication_error' not in st.session_state:
         st.session_state.authentication_error = None
-    # Store current URL
-    st.session_state.current_url = st.secrets["DEPLOYMENT_URL"]
+    st.session_state.current_url = st.secrets.get("DEPLOYMENT_URL", "http://localhost:8501")
 
+# Main Application
 def main():
     st.set_page_config(
         page_title="YouTube Chatbot Login",
@@ -102,62 +104,64 @@ def main():
         st.error(st.session_state.authentication_error)
         st.session_state.authentication_error = None
     
-    # Initialize Google Auth
     try:
+        # Get configuration
+        GOOGLE_CLIENT_CONFIG = get_config()
+        
+        # Initialize Google Auth
         auth = GoogleAuth(GOOGLE_CLIENT_CONFIG)
-    except Exception as e:
-        st.error(f"Failed to initialize Google Auth: {str(e)}")
-        return
-    
-    # Check if user is logged in
-    if st.session_state.user_info is None:
-        if 'code' not in st.experimental_get_query_params():
-            st.info("Please login to continue")
-            # Show login button
-            try:
-                auth_url = auth.get_authorization_url()
-                st.markdown(
-                    f'<div style="display: flex; justify-content: center; margin: 20px;">'
-                    f'<a href="{auth_url}" target="_self">'
-                    '<button style="background-color: #4285F4; color: white; '
-                    'padding: 12px 24px; border: none; border-radius: 4px; '
-                    'cursor: pointer; font-size: 16px; display: flex; '
-                    'align-items: center; gap: 10px;">'
-                    '<img src="https://www.google.com/favicon.ico" '
-                    'style="width: 20px; height: 20px;"/> '
-                    'Sign in with Google</button></a></div>', 
-                    unsafe_allow_html=True
-                )
-            except Exception as e:
-                st.error(f"Failed to generate authentication URL: {str(e)}")
-        else:
-            # Handle the OAuth callback
-            with st.spinner("Authenticating..."):
-                code = st.experimental_get_query_params()['code'][0]
+        
+        # Check if user is logged in
+        if st.session_state.user_info is None:
+            if 'code' not in st.experimental_get_query_params():
+                st.info("Please login to continue")
+                # Show login button
                 try:
-                    user_info = auth.get_user_info(code)
-                    st.session_state.user_info = user_info
-                    # Clear the URL parameters
-                    st.experimental_set_query_params()
-                    st.experimental_rerun()
+                    auth_url = auth.get_authorization_url()
+                    st.markdown(
+                        f'<div style="display: flex; justify-content: center; margin: 20px;">'
+                        f'<a href="{auth_url}" target="_self">'
+                        '<button style="background-color: #4285F4; color: white; '
+                        'padding: 12px 24px; border: none; border-radius: 4px; '
+                        'cursor: pointer; font-size: 16px; display: flex; '
+                        'align-items: center; gap: 10px;">'
+                        'Sign in with Google</button></a></div>', 
+                        unsafe_allow_html=True
+                    )
                 except Exception as e:
-                    st.session_state.authentication_error = f"Authentication failed: {str(e)}"
-                    st.experimental_set_query_params()
+                    st.error(f"Failed to generate authentication URL: {str(e)}")
+            else:
+                # Handle the OAuth callback
+                with st.spinner("Authenticating..."):
+                    code = st.experimental_get_query_params()['code'][0]
+                    try:
+                        user_info = auth.get_user_info(code)
+                        st.session_state.user_info = user_info
+                        # Clear the URL parameters
+                        st.experimental_set_query_params()
+                        st.experimental_rerun()
+                    except Exception as e:
+                        st.session_state.authentication_error = f"Authentication failed: {str(e)}"
+                        st.experimental_set_query_params()
+                        st.experimental_rerun()
+        else:
+            # Show user info in the header's second column
+            with col2:
+                st.write(f"👤 {st.session_state.user_info['name']}")
+                if st.button("Logout", type="primary", key="logout"):
+                    st.session_state.user_info = None
                     st.experimental_rerun()
-    else:
-        # Show user info in the header's second column
-        with col2:
-            st.write(f"👤 {st.session_state.user_info['name']}")
-            if st.button("Logout", type="primary", key="logout"):
-                st.session_state.user_info = None
-                st.experimental_rerun()
-        
-        # Main app content
-        st.write("---")
-        st.success("You're successfully logged in! The chatbot is ready to use.")
-        
-        # Add your chatbot UI and functionality here
-        st.write("Your chatbot interface goes here!")
+            
+            # Main app content
+            st.write("---")
+            st.success("You're successfully logged in! The chatbot is ready to use.")
+            
+            # Add your chatbot UI and functionality here
+            st.write("Your chatbot interface goes here!")
+            
+    except Exception as e:
+        st.error(f"Application error: {str(e)}")
+        st.stop()
 
 if __name__ == "__main__":
     main()
